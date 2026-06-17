@@ -1,5 +1,6 @@
 using UnityEngine;
-using UnityEngine.SceneManagement;
+using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 
 public class GameManager : MonoBehaviour
 {
@@ -10,6 +11,9 @@ public class GameManager : MonoBehaviour
     public bool IsGameOver { get; private set; }
     public int Score { get; private set; }
 
+    public event System.Action OnRestart;
+
+    private const float StartSpeed = 8f;
     private const float SpeedIncreaseRate = 0.4f;
     private const float MaxSpeed = 30f;
     private float scoreTimer;
@@ -24,14 +28,14 @@ public class GameManager : MonoBehaviour
     {
         if (IsGameOver)
         {
-            if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0))
-                SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+            if (JumpPressed())
+                Restart();
             return;
         }
 
         if (!IsPlaying)
         {
-            if (Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0))
+            if (JumpPressed())
                 IsPlaying = true;
             return;
         }
@@ -46,9 +50,29 @@ public class GameManager : MonoBehaviour
         }
     }
 
+    static bool JumpPressed()
+    {
+        bool mouseClick = Mouse.current != null
+                       && Mouse.current.leftButton.wasPressedThisFrame
+                       && (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject());
+
+        return (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+            || mouseClick;
+    }
+
     public void TriggerGameOver()
     {
         IsPlaying = false;
         IsGameOver = true;
+    }
+
+    void Restart()
+    {
+        GameSpeed = StartSpeed;
+        Score = 0;
+        scoreTimer = 0f;
+        IsGameOver = false;
+        IsPlaying = false;
+        OnRestart?.Invoke();
     }
 }

@@ -35,7 +35,28 @@ public class ObstacleSpawner : MonoBehaviour
     private float timer;
     private float nextSpawn;
 
-    void Start() => nextSpawn = 1.5f;
+    void Start()
+    {
+        nextSpawn = 1.5f;
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnRestart += ResetSpawner;
+    }
+
+    void OnDestroy()
+    {
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnRestart -= ResetSpawner;
+    }
+
+    void ResetSpawner()
+    {
+        // destroy any obstacles still on screen
+        foreach (var obs in FindObjectsOfType<Obstacle>())
+            Destroy(obs.gameObject);
+
+        timer = 0f;
+        nextSpawn = 1.5f;
+    }
 
     void Update()
     {
@@ -63,7 +84,7 @@ public class ObstacleSpawner : MonoBehaviour
         float width = PlaceholderWidth;
 
         var go = new GameObject("Obstacle");
-        go.tag = "Obstacle";
+        go.AddComponent<ObstacleMarker>();
         go.transform.position = new Vector3(SpawnX, GroundSurfaceY + height * 0.5f, 0f);
 
         var sr = go.AddComponent<SpriteRenderer>();
@@ -74,14 +95,11 @@ public class ObstacleSpawner : MonoBehaviour
         }
         else
         {
-            // red placeholder rectangle
-            sr.color = new Color(0.85f, 0.2f, 0.2f);
+            sr.sprite = GameBootstrapper.MakePlaceholderSprite(new Color(0.85f, 0.2f, 0.2f));
             go.transform.localScale = new Vector3(width, height, 1f);
         }
 
-        var col = go.AddComponent<BoxCollider2D>();
-        if (pick >= 0)
-            col.size = new Vector2(sr.sprite.bounds.size.x, sr.sprite.bounds.size.y);
+        go.AddComponent<BoxCollider2D>();
 
         go.AddComponent<Obstacle>();
     }

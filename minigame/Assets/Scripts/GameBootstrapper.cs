@@ -3,13 +3,21 @@ using UnityEngine.UI;
 
 // ============================================================
 //  GameBootstrapper
-//  Attach this to ANY empty GameObject in your scene and press
-//  Play — it builds the entire game world at runtime.
-//  No manual scene setup required.
+//  Creates itself automatically at runtime — just press Play.
+//  No scene setup needed. To assign sprites/font, place this
+//  script on a GameObject and use the Inspector fields.
 // ============================================================
 
 public class GameBootstrapper : MonoBehaviour
 {
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    static void AutoCreate()
+    {
+        if (FindObjectOfType<GameBootstrapper>() != null) return;
+        var go = new GameObject("GameBootstrapper");
+        go.AddComponent<GameBootstrapper>();
+    }
+
     // ──────────────────────────────────────────────────────────
     //  SPRITE SLOTS — assign these in the Inspector
     //  after importing your pixel art. Everything below is
@@ -44,11 +52,9 @@ public class GameBootstrapper : MonoBehaviour
     void Awake()
     {
         SetupCamera();
-        SetupTags();
-
-        var gm = SetupGameManager();
+        SetupGameManager();
         SetupGround();
-        var player = SetupPlayer();
+        SetupPlayer();
         SetupObstacleSpawner();
         SetupUI();
     }
@@ -66,21 +72,11 @@ public class GameBootstrapper : MonoBehaviour
         cam.clearFlags = CameraClearFlags.SolidColor;
     }
 
-    // ── Tags (created at runtime if missing) ─────────────────
-
-    void SetupTags()
-    {
-        // Tags must exist in Project Settings > Tags & Layers.
-        // If you see "Tag: Ground not found" warnings, add "Ground"
-        // and "Obstacle" in Edit > Project Settings > Tags & Layers.
-    }
-
     // ── GameManager ──────────────────────────────────────────
 
     GameManager SetupGameManager()
     {
-        var go = new GameObject("GameManager");
-        return go.AddComponent<GameManager>();
+        return new GameObject("GameManager").AddComponent<GameManager>();
     }
 
     // ── Ground ───────────────────────────────────────────────
@@ -103,15 +99,15 @@ public class GameBootstrapper : MonoBehaviour
     {
         var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
         go.name = name;
-        go.tag = "Ground";
+        go.AddComponent<GroundMarker>();
         go.transform.position = new Vector3(offsetX, GroundY - GroundThickness * 0.5f, 0f);
         go.transform.localScale = new Vector3(TileWidth, GroundThickness, 1f);
 
         // grey placeholder colour
         go.GetComponent<Renderer>().material.color = new Color(0.55f, 0.55f, 0.55f);
 
-        // 2D collider
-        Object.Destroy(go.GetComponent<BoxCollider>());
+        // 2D collider — DestroyImmediate so the 3D one is gone before we add the 2D one
+        DestroyImmediate(go.GetComponent<BoxCollider>());
         go.AddComponent<BoxCollider2D>();
 
         return go.transform;
@@ -122,37 +118,40 @@ public class GameBootstrapper : MonoBehaviour
     GameObject SetupPlayer()
     {
         var go = new GameObject("ClaudePlayer");
-        go.tag = "Player";
         go.transform.position = new Vector3(PlayerStartX, GroundY + PlayerSize * 0.5f, 0f);
 
-        var sr = go.AddComponent<SpriteRenderer>();
-        sr.color = new Color(0.18f, 0.18f, 0.18f); // dark placeholder (Claude's terminal black)
-
-        // Assign sprites if provided
+        // AddComponent<PlayerController> triggers RequireComponent, auto-adding Rigidbody2D,
+        // BoxCollider2D, and SpriteRenderer — so we configure them afterwards.
         var pc = go.AddComponent<PlayerController>();
-        pc.jumpSprite = playerJumpSprite;
-        pc.deadSprite = playerDeadSprite;
+        var sr = go.GetComponent<SpriteRenderer>();
+        pc.jumpSprite = playerJumpSprite != null ? playerJumpSprite : MakePlaceholderSprite(new Color(0.18f, 0.18f, 0.18f));
+        pc.deadSprite = playerDeadSprite != null ? playerDeadSprite : MakePlaceholderSprite(new Color(0.6f, 0.1f, 0.1f));
 
         if (playerRunFrame0 != null || playerRunFrame1 != null)
         {
-            // only include non-null frames
             int count = (playerRunFrame0 != null ? 1 : 0) + (playerRunFrame1 != null ? 1 : 0);
             pc.runFrames = new Sprite[count];
             int i = 0;
             if (playerRunFrame0 != null) pc.runFrames[i++] = playerRunFrame0;
             if (playerRunFrame1 != null) pc.runFrames[i++] = playerRunFrame1;
         }
+        else
+        {
+            // placeholder run "animation" — just one dark square
+            pc.runFrames = new Sprite[] { MakePlaceholderSprite(new Color(0.18f, 0.18f, 0.18f)) };
+        }
 
-        var rb = go.AddComponent<Rigidbody2D>();
+        // seed the renderer with a sprite so it's visible from frame 0
+        sr.sprite = pc.runFrames[0];
+
+        var rb = go.GetComponent<Rigidbody2D>();
         rb.constraints = RigidbodyConstraints2D.FreezeRotation;
         rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+        rb.gravityScale = 2f;
 
-        var col = go.AddComponent<BoxCollider2D>();
-        col.size = new Vector2(0.8f, 1f); // slightly inset so edge clips feel fair
-
-        // Placeholder square if no sprites assigned
-        if (playerRunFrame0 == null && playerJumpSprite == null)
-            go.transform.localScale = new Vector3(PlayerSize, PlayerSize, 1f);
+        var col = go.GetComponent<BoxCollider2D>();
+        col.size = new Vector2(0.8f, 1f);
+        go.transform.localScale = new Vector3(PlayerSize, PlayerSize, 1f);
 
         return go;
     }
@@ -165,6 +164,19 @@ public class GameBootstrapper : MonoBehaviour
         var spawner = go.AddComponent<ObstacleSpawner>();
         spawner.obstacleSprites = obstacleSprites;
         spawner.obstacleHeights = obstacleHeights;
+    }
+
+    // ── Placeholder sprite generator ─────────────────────────
+
+    public static Sprite MakePlaceholderSprite(Color color)
+    {
+        var tex = new Texture2D(4, 4);
+        var pixels = new Color[16];
+        for (int i = 0; i < pixels.Length; i++) pixels[i] = color;
+        tex.SetPixels(pixels);
+        tex.Apply();
+        tex.filterMode = FilterMode.Point;
+        return Sprite.Create(tex, new Rect(0, 0, 4, 4), new Vector2(0.5f, 0.5f), 4f);
     }
 
     // ── UI Canvas ────────────────────────────────────────────

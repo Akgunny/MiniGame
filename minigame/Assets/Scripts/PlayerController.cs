@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.InputSystem;
+using UnityEngine.EventSystems;
 
 // ============================================================
 //  SPRITE SETUP — read this before adding pixel art
@@ -27,6 +29,8 @@ public class PlayerController : MonoBehaviour
 {
     [Header("Jump")]
     public float jumpForce = 14f;
+    public float gravityRising = 2f;
+    public float gravityFalling = 3.5f;
 
     [Header("Player Sprites — drop pixel art here")]
     public Sprite jumpSprite;
@@ -41,10 +45,38 @@ public class PlayerController : MonoBehaviour
     private float frameTimer;
     private int frameIndex;
 
+    Vector3 startPosition;
+
     void Awake()
     {
         rb = GetComponent<Rigidbody2D>();
         sr = GetComponent<SpriteRenderer>();
+        startPosition = transform.position;
+    }
+
+    void Start()
+    {
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnRestart += ResetPlayer;
+    }
+
+    void OnDestroy()
+    {
+        if (GameManager.Instance != null)
+            GameManager.Instance.OnRestart -= ResetPlayer;
+    }
+
+    void ResetPlayer()
+    {
+        isDead = false;
+        isGrounded = false;
+        frameIndex = 0;
+        frameTimer = 0f;
+        rb.gravityScale = 1f;
+        rb.linearVelocity = Vector2.zero;
+        transform.position = startPosition;
+        if (runFrames != null && runFrames.Length > 0)
+            sr.sprite = runFrames[0];
     }
 
     void Update()
@@ -52,12 +84,19 @@ public class PlayerController : MonoBehaviour
         if (isDead || GameManager.Instance == null) return;
         if (!GameManager.Instance.IsPlaying) return;
 
-        bool jumpPressed = Input.GetKeyDown(KeyCode.Space) || Input.GetMouseButtonDown(0);
+        bool mouseClick = Mouse.current != null
+                       && Mouse.current.leftButton.wasPressedThisFrame
+                       && (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject());
+
+        bool jumpPressed = (Keyboard.current != null && Keyboard.current.spaceKey.wasPressedThisFrame)
+                        || mouseClick;
         if (isGrounded && jumpPressed)
         {
             rb.linearVelocity = new Vector2(0f, jumpForce);
             isGrounded = false;
         }
+
+        rb.gravityScale = rb.linearVelocity.y < 0f ? gravityFalling : gravityRising;
 
         UpdateSprite();
     }
@@ -83,16 +122,22 @@ public class PlayerController : MonoBehaviour
 
     void OnCollisionEnter2D(Collision2D col)
     {
-        if (col.gameObject.CompareTag("Ground"))
+        if (col.gameObject.GetComponent<GroundMarker>() != null)
             isGrounded = true;
 
-        if (col.gameObject.CompareTag("Obstacle"))
+        if (col.gameObject.GetComponent<ObstacleMarker>() != null)
             Die();
+    }
+
+    void OnCollisionStay2D(Collision2D col)
+    {
+        if (col.gameObject.GetComponent<GroundMarker>() != null)
+            isGrounded = true;
     }
 
     void OnCollisionExit2D(Collision2D col)
     {
-        if (col.gameObject.CompareTag("Ground"))
+        if (col.gameObject.GetComponent<GroundMarker>() != null)
             isGrounded = false;
     }
 
